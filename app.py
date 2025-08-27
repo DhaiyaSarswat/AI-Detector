@@ -49,37 +49,6 @@ st.markdown("""
         text-align: center;
         font-style: italic;
     }
-
-    /* Metric Card Styling - ENHANCED */
-    .metric-container {
-        border: 1px solid #333A4A;
-        border-radius: 12px;
-        padding: 20px;
-        background-color: #1E232E; /* A layered dark background for depth */
-        text-align: center;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-        transition: all 0.2s ease-in-out;
-        min-height: 160px; /* Ensure uniform height for all cards */
-        display: flex;
-        flex-direction: column;
-        justify-content: center; /* Center content vertically */
-    }
-    .metric-container:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-        border-color: #5A99E3; /* Highlight on hover */
-    }
-    .metric-title {
-        font-size: 18px;
-        font-weight: bold;
-        color: #A0A0A0; /* Subdued color for the title */
-        margin-bottom: 10px;
-    }
-    .metric-value {
-        font-size: 38px; /* Larger font for the metric value */
-        font-weight: bold;
-        color: #5A99E3; /* Match the primary action color */
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -220,8 +189,8 @@ def plot_top_repeated_words(text):
     fig.update_layout(
         title_font_color="#FFFFFF",
         font_color="#CCCCCC",
-        plot_bgcolor="#1E232E",  # Match metric card background
-        paper_bgcolor="#1E232E", # Match metric card background
+        plot_bgcolor="#0E1117",
+        paper_bgcolor="#0E1117",
         xaxis_title=None,
         yaxis_title=None,
     )
@@ -273,35 +242,29 @@ with col_btn:
                 st.markdown("<p class='red-disclaimer'>⚠️ Disclaimer: No AI detector is 100% accurate. Use results cautiously as a guide, not a definitive judgment.</p>", unsafe_allow_html=True)
                 st.divider()
 
-                # --- Metrics Section ---
+                # --- Metrics Section (REVISED WITH st.metric) ---
                 st.subheader("Linguistic Metrics")
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <p class="metric-title">Perplexity</p>
-                        <p class="metric-value">{perplexity:.2f}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.info("Measures text predictability. Lower scores are more AI-like.", icon="🧠")
+                    st.metric(
+                        label="Perplexity", 
+                        value=f"{perplexity:.2f}",
+                        help="Measures text predictability. Lower scores are more AI-like. 🧠"
+                    )
                 
                 with col2:
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <p class="metric-title">Burstiness</p>
-                        <p class="metric-value">{burstiness:.2f}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.info("Measures word repetition. Lower scores are more AI-like.", icon="🔄")
+                    st.metric(
+                        label="Burstiness", 
+                        value=f"{burstiness:.2f}",
+                        help="Measures word repetition. Lower scores are more AI-like. 🔄"
+                    )
 
                 with col3:
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <p class="metric-title">Entropy</p>
-                        <p class="metric-value">{entropy:.2f}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.info("Measures word diversity. Lower scores are more AI-like.", icon="🎲")
+                    st.metric(
+                        label="Entropy", 
+                        value=f"{entropy:.2f}",
+                        help="Measures word diversity. Lower scores are more AI-like. 🎲"
+                    )
 
                 st.divider()
 
