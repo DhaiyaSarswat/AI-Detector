@@ -25,30 +25,60 @@ st.set_page_config(
 # ------------------------------------
 st.markdown("""
 <style>
+    /* Main Button Style */
     .stButton>button {
-        background-color: #4A90E2;
+        background-color: #5A99E3; /* Brighter, more engaging blue */
         color: white;
         border-radius: 10px;
-        border: none;
-        padding: 10px 20px;
+        border: 1px solid #3E6A9E; /* Subtle border for depth */
+        padding: 12px 24px;
         font-weight: bold;
+        transition: all 0.2s ease-in-out;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
     .stButton>button:hover {
-        background-color: #357ABD;
-        color: white;
+        background-color: #4A88D3;
+        transform: translateY(-2px); /* Add a lift effect on hover */
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
     }
+
+    /* Disclaimer Text */
     .red-disclaimer {
-        color: #FF6B6B;
+        color: #FF8B8B; /* Softer red for better readability on dark backgrounds */
         font-size: 14px;
         text-align: center;
         font-style: italic;
     }
+
+    /* Metric Card Styling - ENHANCED */
     .metric-container {
         border: 1px solid #333A4A;
-        border-radius: 10px;
-        padding: 15px;
-        background-color: #1A2234;
+        border-radius: 12px;
+        padding: 20px;
+        background-color: #1E232E; /* A layered dark background for depth */
         text-align: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        transition: all 0.2s ease-in-out;
+        min-height: 160px; /* Ensure uniform height for all cards */
+        display: flex;
+        flex-direction: column;
+        justify-content: center; /* Center content vertically */
+    }
+    .metric-container:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+        border-color: #5A99E3; /* Highlight on hover */
+    }
+    .metric-title {
+        font-size: 18px;
+        font-weight: bold;
+        color: #A0A0A0; /* Subdued color for the title */
+        margin-bottom: 10px;
+    }
+    .metric-value {
+        font-size: 38px; /* Larger font for the metric value */
+        font-weight: bold;
+        color: #5A99E3; /* Match the primary action color */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -108,9 +138,7 @@ tokenizer, model = load_model()
 # ------------------------------------
 def get_clean_tokens(text):
     """Helper function to get cleaned tokens from text."""
-    # Tokenize the text and convert to lowercase
     tokens = nltk.word_tokenize(text.lower())
-    # Filter out stopwords and punctuation
     stop_words = set(stopwords.words("english"))
     return [t for t in tokens if t.isalpha() and t not in stop_words]
 
@@ -142,7 +170,6 @@ def calculate_burstiness(text):
         return 0.0
     word_frequency = FreqDist(tokens)
     repeated_count = sum(count > 1 for count in word_frequency.values())
-    # Avoid division by zero if there are no unique words
     return repeated_count / len(word_frequency) if len(word_frequency) > 0 else 0.0
 
 def calculate_entropy(text):
@@ -155,46 +182,24 @@ def calculate_entropy(text):
         return 0.0
     word_counts = Counter(tokens)
     total_words = sum(word_counts.values())
-    
-    # Calculate probabilities for each unique word
     probs = [count / total_words for count in word_counts.values()]
-    
-    # Calculate Shannon entropy
     entropy = -sum(p * math.log2(p) for p in probs if p > 0)
-    
-    # Normalize by the maximum possible entropy for this number of unique words
-    # This ensures the score is between 0 and 1
     num_unique_words = len(word_counts)
     if num_unique_words <= 1:
         return 0.0
-    
     return entropy / math.log2(num_unique_words)
 
 def ai_probability(perplexity, burstiness, entropy):
     """
     Combine metrics into an AI probability score with corrected perplexity scaling.
     """
-    # --- REVISED PERPLEXITY LOGIC ---
-    # Define realistic perplexity thresholds. These values may need tuning.
-    PPL_AI_THRESHOLD = 40.0      # Perplexity below this is very AI-like
-    PPL_HUMAN_THRESHOLD = 150.0  # Perplexity above this is very human-like
-
-    # Scale perplexity score: low perplexity should result in a high score (closer to 1.0 for AI)
+    PPL_AI_THRESHOLD = 40.0
+    PPL_HUMAN_THRESHOLD = 150.0
     raw_ppl_score = (PPL_HUMAN_THRESHOLD - perplexity) / (PPL_HUMAN_THRESHOLD - PPL_AI_THRESHOLD)
-    
-    # Clamp the score between 0 and 1 to handle values outside our defined range
     perplexity_score = max(0, min(raw_ppl_score, 1.0))
-
-    # --- OTHER METRICS ---
-    # Burstiness and entropy scores are inverted: lower values are more AI-like.
-    # So, we subtract from 1 to align them (higher score = more AI-like).
     burstiness_score = 1 - burstiness
     entropy_score = 1 - entropy
-
-    # Combine the scores with weights. Perplexity is the strongest indicator.
-    # Weights: Perplexity (50%), Burstiness (25%), Entropy (25%)
     score = (0.5 * perplexity_score) + (0.25 * burstiness_score) + (0.25 * entropy_score)
-    
     return max(0, min(score, 1)) * 100
 
 def plot_top_repeated_words(text):
@@ -203,10 +208,8 @@ def plot_top_repeated_words(text):
     if not tokens:
         st.write("No significant words found to plot.")
         return
-        
     word_counts = Counter(tokens)
     top_words = word_counts.most_common(10)
-    
     words, counts = zip(*top_words)
     fig = px.bar(
         x=words, y=counts,
@@ -217,12 +220,12 @@ def plot_top_repeated_words(text):
     fig.update_layout(
         title_font_color="#FFFFFF",
         font_color="#CCCCCC",
-        plot_bgcolor="#0E1117",  # Match Streamlit's dark theme background
-        paper_bgcolor="#0E1117",
+        plot_bgcolor="#1E232E",  # Match metric card background
+        paper_bgcolor="#1E232E", # Match metric card background
         xaxis_title=None,
         yaxis_title=None,
     )
-    fig.update_traces(marker_color='#4A90E2', textposition='outside')
+    fig.update_traces(marker_color='#5A99E3', textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
 # ------------------------------------
@@ -239,7 +242,6 @@ text_area = st.text_area(
     placeholder="Paste your text here (we recommend 50-1000 words for best results)..."
 )
 
-# Centered button
 _, col_btn, _ = st.columns([2, 1, 2])
 with col_btn:
     if st.button("Analyze Text", use_container_width=True):
@@ -251,7 +253,6 @@ with col_btn:
                 st.warning(f"⚠️ Please enter between 50 and 1000 words. Your text has {word_count} words.")
             else:
                 with st.spinner("Performing linguistic analysis..."):
-                    # Calculate all metrics
                     perplexity = calculate_perplexity(text_area)
                     burstiness = calculate_burstiness(text_area)
                     entropy = calculate_entropy(text_area)
@@ -261,12 +262,11 @@ with col_btn:
 
                 # --- Verdict Section ---
                 st.subheader("Verdict")
-                if probability > 65:
+                if probability > 70:
                     st.error(f"**🤖 Likely AI-Generated** (Confidence: {probability:.1f}%)")
-                elif 40 < probability <= 65:
+                elif 40 < probability <= 70:
                     st.warning(f"**⚖️ Mixed / Uncertain** (Confidence: {probability:.1f}%)")
                 else:
-                    # For human-written, confidence is how far it is from the AI threshold
                     human_confidence = 100 - probability
                     st.success(f"**🧑 Likely Human-Written** (Confidence: {human_confidence:.1f}%)")
 
@@ -279,8 +279,8 @@ with col_btn:
                 with col1:
                     st.markdown(f"""
                     <div class="metric-container">
-                        <h4>Perplexity</h4>
-                        <p style="font-size: 24px; font-weight: bold; color: #4A90E2;">{perplexity:.2f}</p>
+                        <p class="metric-title">Perplexity</p>
+                        <p class="metric-value">{perplexity:.2f}</p>
                     </div>
                     """, unsafe_allow_html=True)
                     st.info("Measures text predictability. Lower scores are more AI-like.", icon="🧠")
@@ -288,8 +288,8 @@ with col_btn:
                 with col2:
                     st.markdown(f"""
                     <div class="metric-container">
-                        <h4>Burstiness</h4>
-                        <p style="font-size: 24px; font-weight: bold; color: #4A90E2;">{burstiness:.2f}</p>
+                        <p class="metric-title">Burstiness</p>
+                        <p class="metric-value">{burstiness:.2f}</p>
                     </div>
                     """, unsafe_allow_html=True)
                     st.info("Measures word repetition. Lower scores are more AI-like.", icon="🔄")
@@ -297,8 +297,8 @@ with col_btn:
                 with col3:
                     st.markdown(f"""
                     <div class="metric-container">
-                        <h4>Entropy</h4>
-                        <p style="font-size: 24px; font-weight: bold; color: #4A90E2;">{entropy:.2f}</p>
+                        <p class="metric-title">Entropy</p>
+                        <p class="metric-value">{entropy:.2f}</p>
                     </div>
                     """, unsafe_allow_html=True)
                     st.info("Measures word diversity. Lower scores are more AI-like.", icon="🎲")
@@ -308,4 +308,3 @@ with col_btn:
                 # --- Insights Section ---
                 st.subheader("Insights")
                 plot_top_repeated_words(text_area)
-
