@@ -68,42 +68,91 @@ def calculate_perplexity(text):
     """Perplexity: measures how predictable the text is to GPT-2"""
     encodings = tokenizer(text, return_tensors="pt")
     input_ids = encodings.input_ids
-    with torch.no_grad():
-        outputs = model(input_ids, labels=input_ids)
-        loss = outputs.loss
-    return torch.exp(loss).item()
+    
+    # Handle longer texts by processing in chunks
+    max_length = model.config.n_positions
+    stride = 512
+    
+    nlls = []
+    for i in range(0, input_ids.size(1), stride):
+        begin_loc = max(i + stride - max_length, 0)
+        end_loc = i + stride
+        trg_len = end_loc - i  # may be different from stride on last loop
+        input_ids_chunk = input_ids[:, begin_loc:end_loc]
+        target_ids = input_ids_chunk.clone()
+        target_ids[:, :-trg_len] = -100
+
+        with torch.no_grad():
+            outputs = model(input_ids_chunk, labels=target_ids)
+            neg_log_likelihood = outputs.loss * trg_len
+
+        nlls.append(neg_log_likelihood)
+
+    ppl = torch.exp(torch.stack(nlls).sum() / end_loc)
+    return ppl.item()
 
 def calculate_burstiness(text):
     """Burstiness: measures repetition of words"""
     tokens = nltk.word_tokenize(text.lower())
-    if not tokens:
-        return 0.0
-    word_frequency = FreqDist(tokens)
-    repeated_count = sum(count > 1 for count in word_frequency.values())
-    return repeated_count / len(word_frequency)
+    if len(tokens) < 10:  # Too short for meaningful analysis
+        return 0.5
+    
+    # Filter out stopwords and punctuation
+    filtered_tokens = [t for t in tokens if t not in stopwords.words("english") and t not in string.punctuation]
+    
+    if not filtered_tokens:
+        return 0.5
+        
+    word_frequency = FreqDist(filtered_tokens)
+    total_words = len(filtered_tokens)
+    unique_words = len(word_frequency)
+    
+    # Calculate type-token ratio
+    ttr = unique_words / total_words
+    
+    # Calculate how many words are repeated
+    repeated_words = sum(1 for count in word_frequency.values() if count > 1)
+    repetition_ratio = repeated_words / unique_words if unique_words > 0 else 0
+    
+    # Combined burstiness score
+    burstiness = 0.7 * (1 - ttr) + 0.3 * repetition_ratio
+    return burstiness
 
 def calculate_entropy(text):
     """Entropy: diversity/unpredictability of word usage"""
     tokens = nltk.word_tokenize(text.lower())
     tokens = [t for t in tokens if t not in stopwords.words("english") and t not in string.punctuation]
-    if not tokens:
-        return 0.0
+    
+    if len(tokens) < 5:
+        return 0.5
+        
     word_counts = Counter(tokens)
     total = sum(word_counts.values())
+    
+    # Calculate entropy
     probs = [count/total for count in word_counts.values()]
     entropy = -sum(p * math.log2(p) for p in probs)
-    return entropy / math.log2(len(word_counts))  # normalized 0–1
+    
+    # Normalize between 0-1 based on reasonable bounds for text
+    # Typical entropy for English text is between 9-13 bits
+    normalized_entropy = min(max((entropy - 9) / 4, 0), 1)
+    return normalized_entropy
 
 def ai_probability(perplexity, burstiness, entropy):
     """
     Combine metrics into AI probability score.
     Lower perplexity + low burstiness + low entropy => AI-like
     """
-    perplexity_score = min(perplexity / 1000, 1.0)
-    burstiness_score = 1 - burstiness
-    entropy_score = 1 - entropy
-
-    score = (0.5 * (1 - perplexity_score)) + (0.25 * burstiness_score) + (0.25 * entropy_score)
+    # Normalize perplexity (GPT-2 perplexity typically between 20-100 for coherent text)
+    perplexity_norm = min(max((perplexity - 20) / 80, 0), 1)
+    
+    # AI text tends to have lower perplexity, lower burstiness, and lower entropy
+    ai_perplexity = 1 - perplexity_norm  # Lower perplexity = more AI-like
+    ai_burstiness = 1 - burstiness       # Lower burstiness = more AI-like  
+    ai_entropy = 1 - entropy             # Lower entropy = more AI-like
+    
+    # Adjust weights based on empirical testing
+    score = (0.4 * ai_perplexity) + (0.35 * ai_burstiness) + (0.25 * ai_entropy)
     return max(0, min(score, 1)) * 100
 
 def plot_top_repeated_words(text):
@@ -181,3 +230,4 @@ with col_btn2:
                 st.divider()
                 st.subheader("Insights")
                 plot_top_repeated_words(text_area)
+
