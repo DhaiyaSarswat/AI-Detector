@@ -9,6 +9,7 @@ import string
 import math
 import plotly.express as px
 import time
+import os
 
 # ------------------------------------
 # Page Config
@@ -37,17 +38,17 @@ st.markdown(
 )
 
 # ------------------------------------
-# NLTK Setup
+# NLTK Setup (Robust for Streamlit Cloud)
 # ------------------------------------
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
+nltk_data_dir = os.path.join(os.path.expanduser("~"), "nltk_data")
+if not os.path.exists(nltk_data_dir):
+    os.makedirs(nltk_data_dir)
 
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords')
+# Ensure downloads happen quietly & path is added
+nltk.download("punkt", download_dir=nltk_data_dir, quiet=True)
+nltk.download("punkt_tab", download_dir=nltk_data_dir, quiet=True)
+nltk.download("stopwords", download_dir=nltk_data_dir, quiet=True)
+nltk.data.path.append(nltk_data_dir)
 
 # ------------------------------------
 # Load GPT-2
@@ -98,12 +99,10 @@ def ai_probability(perplexity, burstiness, entropy):
     Combine metrics into AI probability score.
     Lower perplexity + low burstiness + low entropy => AI-like
     """
-    # Normalize perplexity to a [0,1] scale (cap extremes)
     perplexity_score = min(perplexity / 1000, 1.0)
-    burstiness_score = 1 - burstiness  # lower burstiness => more AI
-    entropy_score = 1 - entropy        # lower entropy => more AI
+    burstiness_score = 1 - burstiness
+    entropy_score = 1 - entropy
 
-    # Weighted average
     score = (0.5 * (1 - perplexity_score)) + (0.25 * burstiness_score) + (0.25 * entropy_score)
     return max(0, min(score, 1)) * 100
 
