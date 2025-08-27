@@ -3,6 +3,5 @@ torch
 transformers
 numpy
 scikit-learn
-streamlit
-torch
-transformers
+nltk
+plotly
