@@ -21,13 +21,47 @@ st.set_page_config(
 )
 
 # ------------------------------------
+# Custom CSS for styling
+# ------------------------------------
+st.markdown("""
+<style>
+    .stButton>button {
+        background-color: #4A90E2;
+        color: white;
+        border-radius: 10px;
+        border: none;
+        padding: 10px 20px;
+        font-weight: bold;
+    }
+    .stButton>button:hover {
+        background-color: #357ABD;
+        color: white;
+    }
+    .red-disclaimer {
+        color: #FF6B6B;
+        font-size: 14px;
+        text-align: center;
+        font-style: italic;
+    }
+    .metric-container {
+        border: 1px solid #333A4A;
+        border-radius: 10px;
+        padding: 15px;
+        background-color: #1A2234;
+        text-align: center;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ------------------------------------
 # Attribution Banner
 # ------------------------------------
 st.markdown(
     """
     <div style="text-align:center; padding:10px; border-radius:10px; 
-                background-color:#1A2234; border:1px solid #333A4A; 
-                box-shadow: 0 4px 10px rgba(0,0,0,0.4); margin-bottom:20px;">
+                 background-color:#1A2234; border:1px solid #333A4A; 
+                 box-shadow: 0 4px 10px rgba(0,0,0,0.4); margin-bottom:20px;">
         <h4 style="color:#92b6ff; margin:0;">
             🔬 This project is made for <b>testing purposes</b> by:<br>
             Dhairya Sarswat, Shashwat Shinghal, Harsh Agarwal, Hannaan Akhtar <br>
@@ -40,21 +74,29 @@ st.markdown(
 # ------------------------------------
 # NLTK Setup (Robust for Streamlit Cloud)
 # ------------------------------------
+# Create a directory for NLTK data if it doesn't exist
 nltk_data_dir = os.path.join(os.path.expanduser("~"), "nltk_data")
 if not os.path.exists(nltk_data_dir):
     os.makedirs(nltk_data_dir)
 
-# Ensure downloads happen quietly & path is added
-nltk.download("punkt", download_dir=nltk_data_dir, quiet=True)
-nltk.download("punkt_tab", download_dir=nltk_data_dir, quiet=True)
-nltk.download("stopwords", download_dir=nltk_data_dir, quiet=True)
-nltk.data.path.append(nltk_data_dir)
+# Define the packages to download
+nltk_packages = ["punkt", "stopwords"]
+for package in nltk_packages:
+    try:
+        nltk.data.find(f"tokenizers/{package}")
+    except LookupError:
+        nltk.download(package, download_dir=nltk_data_dir, quiet=True)
+
+# Add the custom path to NLTK's data path
+if nltk_data_dir not in nltk.data.path:
+    nltk.data.path.append(nltk_data_dir)
 
 # ------------------------------------
-# Load GPT-2
+# Load GPT-2 Model and Tokenizer
 # ------------------------------------
 @st.cache_resource
 def load_model():
+    """Loads the GPT-2 model and tokenizer and caches them."""
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
     model = GPT2LMHeadModel.from_pretrained("gpt2")
     return tokenizer, model
@@ -62,106 +104,109 @@ def load_model():
 tokenizer, model = load_model()
 
 # ------------------------------------
-# Detection Functions
+# Helper & Detection Functions
 # ------------------------------------
+def get_clean_tokens(text):
+    """Helper function to get cleaned tokens from text."""
+    # Tokenize the text and convert to lowercase
+    tokens = nltk.word_tokenize(text.lower())
+    # Filter out stopwords and punctuation
+    stop_words = set(stopwords.words("english"))
+    return [t for t in tokens if t.isalpha() and t not in stop_words]
+
 def calculate_perplexity(text):
-    """Perplexity: measures how predictable the text is to GPT-2"""
-    encodings = tokenizer(text, return_tensors="pt")
-    input_ids = encodings.input_ids
-    
-    # Handle longer texts by processing in chunks
-    max_length = model.config.n_positions
-    stride = 512
-    
-    nlls = []
-    for i in range(0, input_ids.size(1), stride):
-        begin_loc = max(i + stride - max_length, 0)
-        end_loc = i + stride
-        trg_len = end_loc - i  # may be different from stride on last loop
-        input_ids_chunk = input_ids[:, begin_loc:end_loc]
-        target_ids = input_ids_chunk.clone()
-        target_ids[:, :-trg_len] = -100
-
+    """
+    Perplexity: Measures how predictable the text is to GPT-2.
+    Lower values suggest more predictable (AI-like) text.
+    """
+    if not text.strip():
+        return 0.0
+    try:
+        encodings = tokenizer(text, return_tensors="pt", max_length=1024, truncation=True)
+        input_ids = encodings.input_ids
         with torch.no_grad():
-            outputs = model(input_ids_chunk, labels=target_ids)
-            neg_log_likelihood = outputs.loss * trg_len
-
-        nlls.append(neg_log_likelihood)
-
-    ppl = torch.exp(torch.stack(nlls).sum() / end_loc)
-    return ppl.item()
+            outputs = model(input_ids, labels=input_ids)
+            loss = outputs.loss
+        return torch.exp(loss).item()
+    except Exception as e:
+        st.error(f"Error calculating perplexity: {e}")
+        return 0.0
 
 def calculate_burstiness(text):
-    """Burstiness: measures repetition of words"""
+    """
+    Burstiness: Measures the repetition of words.
+    AI text tends to have lower burstiness (less repetition).
+    """
     tokens = nltk.word_tokenize(text.lower())
-    if len(tokens) < 10:  # Too short for meaningful analysis
-        return 0.5
-    
-    # Filter out stopwords and punctuation
-    filtered_tokens = [t for t in tokens if t not in stopwords.words("english") and t not in string.punctuation]
-    
-    if not filtered_tokens:
-        return 0.5
-        
-    word_frequency = FreqDist(filtered_tokens)
-    total_words = len(filtered_tokens)
-    unique_words = len(word_frequency)
-    
-    # Calculate type-token ratio
-    ttr = unique_words / total_words
-    
-    # Calculate how many words are repeated
-    repeated_words = sum(1 for count in word_frequency.values() if count > 1)
-    repetition_ratio = repeated_words / unique_words if unique_words > 0 else 0
-    
-    # Combined burstiness score
-    burstiness = 0.7 * (1 - ttr) + 0.3 * repetition_ratio
-    return burstiness
+    if not tokens:
+        return 0.0
+    word_frequency = FreqDist(tokens)
+    repeated_count = sum(count > 1 for count in word_frequency.values())
+    # Avoid division by zero if there are no unique words
+    return repeated_count / len(word_frequency) if len(word_frequency) > 0 else 0.0
 
 def calculate_entropy(text):
-    """Entropy: diversity/unpredictability of word usage"""
-    tokens = nltk.word_tokenize(text.lower())
-    tokens = [t for t in tokens if t not in stopwords.words("english") and t not in string.punctuation]
-    
-    if len(tokens) < 5:
-        return 0.5
-        
+    """
+    Entropy: Measures the diversity and unpredictability of word usage.
+    AI text often has lower, more uniform entropy.
+    """
+    tokens = get_clean_tokens(text)
+    if not tokens:
+        return 0.0
     word_counts = Counter(tokens)
-    total = sum(word_counts.values())
+    total_words = sum(word_counts.values())
     
-    # Calculate entropy
-    probs = [count/total for count in word_counts.values()]
-    entropy = -sum(p * math.log2(p) for p in probs)
+    # Calculate probabilities for each unique word
+    probs = [count / total_words for count in word_counts.values()]
     
-    # Normalize between 0-1 based on reasonable bounds for text
-    # Typical entropy for English text is between 9-13 bits
-    normalized_entropy = min(max((entropy - 9) / 4, 0), 1)
-    return normalized_entropy
+    # Calculate Shannon entropy
+    entropy = -sum(p * math.log2(p) for p in probs if p > 0)
+    
+    # Normalize by the maximum possible entropy for this number of unique words
+    # This ensures the score is between 0 and 1
+    num_unique_words = len(word_counts)
+    if num_unique_words <= 1:
+        return 0.0
+    
+    return entropy / math.log2(num_unique_words)
 
 def ai_probability(perplexity, burstiness, entropy):
     """
-    Combine metrics into AI probability score.
-    Lower perplexity + low burstiness + low entropy => AI-like
+    Combine metrics into an AI probability score with corrected perplexity scaling.
     """
-    # Normalize perplexity (GPT-2 perplexity typically between 20-100 for coherent text)
-    perplexity_norm = min(max((perplexity - 20) / 80, 0), 1)
+    # --- REVISED PERPLEXITY LOGIC ---
+    # Define realistic perplexity thresholds. These values may need tuning.
+    PPL_AI_THRESHOLD = 40.0      # Perplexity below this is very AI-like
+    PPL_HUMAN_THRESHOLD = 150.0  # Perplexity above this is very human-like
+
+    # Scale perplexity score: low perplexity should result in a high score (closer to 1.0 for AI)
+    raw_ppl_score = (PPL_HUMAN_THRESHOLD - perplexity) / (PPL_HUMAN_THRESHOLD - PPL_AI_THRESHOLD)
     
-    # AI text tends to have lower perplexity, lower burstiness, and lower entropy
-    ai_perplexity = 1 - perplexity_norm  # Lower perplexity = more AI-like
-    ai_burstiness = 1 - burstiness       # Lower burstiness = more AI-like  
-    ai_entropy = 1 - entropy             # Lower entropy = more AI-like
+    # Clamp the score between 0 and 1 to handle values outside our defined range
+    perplexity_score = max(0, min(raw_ppl_score, 1.0))
+
+    # --- OTHER METRICS ---
+    # Burstiness and entropy scores are inverted: lower values are more AI-like.
+    # So, we subtract from 1 to align them (higher score = more AI-like).
+    burstiness_score = 1 - burstiness
+    entropy_score = 1 - entropy
+
+    # Combine the scores with weights. Perplexity is the strongest indicator.
+    # Weights: Perplexity (50%), Burstiness (25%), Entropy (25%)
+    score = (0.5 * perplexity_score) + (0.25 * burstiness_score) + (0.25 * entropy_score)
     
-    # Adjust weights based on empirical testing
-    score = (0.4 * ai_perplexity) + (0.35 * ai_burstiness) + (0.25 * ai_entropy)
     return max(0, min(score, 1)) * 100
 
 def plot_top_repeated_words(text):
-    tokens = nltk.word_tokenize(text.lower())
-    tokens = [t for t in tokens if t not in stopwords.words("english") and t not in string.punctuation]
+    """Generates and displays a bar chart of the top 10 most frequent words."""
+    tokens = get_clean_tokens(text)
+    if not tokens:
+        st.write("No significant words found to plot.")
+        return
+        
     word_counts = Counter(tokens)
     top_words = word_counts.most_common(10)
-    if not top_words:
-        return
+    
     words, counts = zip(*top_words)
     fig = px.bar(
         x=words, y=counts,
@@ -172,23 +217,31 @@ def plot_top_repeated_words(text):
     fig.update_layout(
         title_font_color="#FFFFFF",
         font_color="#CCCCCC",
-        plot_bgcolor="#1E232E",
-        paper_bgcolor="#1E232E"
+        plot_bgcolor="#0E1117",  # Match Streamlit's dark theme background
+        paper_bgcolor="#0E1117",
+        xaxis_title=None,
+        yaxis_title=None,
     )
     fig.update_traces(marker_color='#4A90E2', textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
 # ------------------------------------
-# UI
+# UI Layout
 # ------------------------------------
 st.title("🛡️ Genesis: AI Text Detector")
-st.markdown("<h3>Discover the origin of your text.</h3>", unsafe_allow_html=True)
+st.markdown("<h4>Discover the origin of your text by analyzing its linguistic patterns.</h4>", unsafe_allow_html=True)
 
 st.subheader("Enter Text Below")
-text_area = st.text_area("✍️", height=300, label_visibility="hidden")
+text_area = st.text_area(
+    "✍️", 
+    height=300, 
+    label_visibility="hidden", 
+    placeholder="Paste your text here (we recommend 50-1000 words for best results)..."
+)
 
-col_btn1, col_btn2, col_btn3 = st.columns([1,1,1])
-with col_btn2:
+# Centered button
+_, col_btn, _ = st.columns([2, 1, 2])
+with col_btn:
     if st.button("Analyze Text", use_container_width=True):
         if not text_area.strip():
             st.warning("Please enter some text to analyze.")
@@ -197,37 +250,62 @@ with col_btn2:
             if not (50 <= word_count <= 1000):
                 st.warning(f"⚠️ Please enter between 50 and 1000 words. Your text has {word_count} words.")
             else:
-                with st.spinner("Analyzing content..."):
-                    time.sleep(2)
+                with st.spinner("Performing linguistic analysis..."):
+                    # Calculate all metrics
+                    perplexity = calculate_perplexity(text_area)
+                    burstiness = calculate_burstiness(text_area)
+                    entropy = calculate_entropy(text_area)
+                    probability = ai_probability(perplexity, burstiness, entropy)
 
                 st.divider()
 
-                # Metrics
-                perplexity = calculate_perplexity(text_area)
-                burstiness = calculate_burstiness(text_area)
-                entropy = calculate_entropy(text_area)
-                probability = ai_probability(perplexity, burstiness, entropy)
-
-                # Verdict
+                # --- Verdict Section ---
                 st.subheader("Verdict")
-                if probability > 60:
-                    st.error(f"🤖 Likely AI-Generated (Confidence {probability:.1f}%)")
-                elif 40 < probability <= 60:
-                    st.warning(f"⚖️ Mixed / Uncertain (Confidence {probability:.1f}%)")
+                if probability > 65:
+                    st.error(f"**🤖 Likely AI-Generated** (Confidence: {probability:.1f}%)")
+                elif 40 < probability <= 65:
+                    st.warning(f"**⚖️ Mixed / Uncertain** (Confidence: {probability:.1f}%)")
                 else:
-                    st.success(f"🧑 Likely Human-Written (Confidence {100 - probability:.1f}%)")
+                    # For human-written, confidence is how far it is from the AI threshold
+                    human_confidence = 100 - probability
+                    st.success(f"**🧑 Likely Human-Written** (Confidence: {human_confidence:.1f}%)")
 
-                st.markdown("<p class='red-disclaimer'>⚠️ Disclaimer: No AI detector is 100% accurate. Use results cautiously.</p>", unsafe_allow_html=True)
+                st.markdown("<p class='red-disclaimer'>⚠️ Disclaimer: No AI detector is 100% accurate. Use results cautiously as a guide, not a definitive judgment.</p>", unsafe_allow_html=True)
                 st.divider()
 
-                # Metrics
-                st.subheader("Metrics")
+                # --- Metrics Section ---
+                st.subheader("Linguistic Metrics")
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Perplexity", f"{perplexity:.2f}")
-                col2.metric("Burstiness", f"{burstiness:.2f}")
-                col3.metric("Entropy", f"{entropy:.2f}")
+                with col1:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <h4>Perplexity</h4>
+                        <p style="font-size: 24px; font-weight: bold; color: #4A90E2;">{perplexity:.2f}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.info("Measures text predictability. Lower scores are more AI-like.", icon="🧠")
+                
+                with col2:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <h4>Burstiness</h4>
+                        <p style="font-size: 24px; font-weight: bold; color: #4A90E2;">{burstiness:.2f}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.info("Measures word repetition. Lower scores are more AI-like.", icon="🔄")
+
+                with col3:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <h4>Entropy</h4>
+                        <p style="font-size: 24px; font-weight: bold; color: #4A90E2;">{entropy:.2f}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.info("Measures word diversity. Lower scores are more AI-like.", icon="🎲")
 
                 st.divider()
+
+                # --- Insights Section ---
                 st.subheader("Insights")
                 plot_top_repeated_words(text_area)
 
