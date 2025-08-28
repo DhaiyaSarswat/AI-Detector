@@ -1,13 +1,11 @@
 import streamlit as st
 from transformers import GPT2Tokenizer, GPT2LMHeadModel
 import torch
-import nltk
-from nltk.probability import FreqDist
 from collections import Counter
-from nltk.corpus import stopwords
 import string
 import math
 import plotly.express as px
+import re
 import time
 import os
 
@@ -70,20 +68,22 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-# ------------------------------------
-# NLTK Setup (Corrected for Streamlit Cloud)
-# ------------------------------------
-# Download NLTK packages directly. This is the most reliable method
-# for Streamlit Cloud deployments as it ensures the data is available.
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt', quiet=True)
 
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords', quiet=True)
+# ------------------------------------
+# Lightweight Tokenizer (no NLTK required)
+# ------------------------------------
+STOPWORDS = {
+    "the", "and", "is", "in", "to", "of", "a", "it", "that", "on", "for", "with",
+    "as", "was", "were", "are", "by", "this", "from", "or", "an", "at", "be"
+}
+
+def simple_tokenize(text: str):
+    """Regex-based word tokenizer."""
+    return re.findall(r'\b\w+\b', text.lower())
+
+def get_clean_tokens(text):
+    tokens = simple_tokenize(text)
+    return [t for t in tokens if t.isalpha() and t not in STOPWORDS]
 
 
 # ------------------------------------
@@ -98,20 +98,12 @@ def load_model():
 
 tokenizer, model = load_model()
 
-# ------------------------------------
-# Helper & Detection Functions
-# ------------------------------------
-def get_clean_tokens(text):
-    """Helper function to get cleaned tokens from text."""
-    tokens = nltk.word_tokenize(text.lower())
-    stop_words = set(stopwords.words("english"))
-    return [t for t in tokens if t.isalpha() and t not in stop_words]
 
+# ------------------------------------
+# Detection Functions
+# ------------------------------------
 def calculate_perplexity(text):
-    """
-    Perplexity: Measures how predictable the text is to GPT-2.
-    Lower values suggest more predictable (AI-like) text.
-    """
+    """Perplexity: Lower values suggest more predictable (AI-like) text."""
     if not text.strip():
         return 0.0
     try:
@@ -126,22 +118,16 @@ def calculate_perplexity(text):
         return 0.0
 
 def calculate_burstiness(text):
-    """
-    Burstiness: Measures the repetition of words.
-    AI text tends to have lower burstiness (less repetition).
-    """
-    tokens = nltk.word_tokenize(text.lower())
+    """Burstiness: Measures the repetition of words."""
+    tokens = simple_tokenize(text)
     if not tokens:
         return 0.0
-    word_frequency = FreqDist(tokens)
+    word_frequency = Counter(tokens)
     repeated_count = sum(count > 1 for count in word_frequency.values())
     return repeated_count / len(word_frequency) if len(word_frequency) > 0 else 0.0
 
 def calculate_entropy(text):
-    """
-    Entropy: Measures the diversity and unpredictability of word usage.
-    AI text often has lower, more uniform entropy.
-    """
+    """Entropy: Measures diversity and unpredictability of word usage."""
     tokens = get_clean_tokens(text)
     if not tokens:
         return 0.0
@@ -155,9 +141,7 @@ def calculate_entropy(text):
     return entropy / math.log2(num_unique_words)
 
 def ai_probability(perplexity, burstiness, entropy):
-    """
-    Combine metrics into an AI probability score with corrected perplexity scaling.
-    """
+    """Combine metrics into an AI probability score."""
     PPL_AI_THRESHOLD = 40.0
     PPL_HUMAN_THRESHOLD = 150.0
     raw_ppl_score = (PPL_HUMAN_THRESHOLD - perplexity) / (PPL_HUMAN_THRESHOLD - PPL_AI_THRESHOLD)
@@ -192,6 +176,7 @@ def plot_top_repeated_words(text):
     )
     fig.update_traces(marker_color='#5A99E3', textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
+
 
 # ------------------------------------
 # UI Layout
@@ -238,29 +223,15 @@ with col_btn:
                 st.markdown("<p class='red-disclaimer'>⚠️ Disclaimer: No AI detector is 100% accurate. Use results cautiously as a guide, not a definitive judgment.</p>", unsafe_allow_html=True)
                 st.divider()
 
-                # --- Metrics Section (REVISED WITH st.metric) ---
+                # --- Metrics Section ---
                 st.subheader("Linguistic Metrics")
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric(
-                        label="Perplexity", 
-                        value=f"{perplexity:.2f}",
-                        help="Measures text predictability. Lower scores are more AI-like. 🧠"
-                    )
-                
+                    st.metric("Perplexity", f"{perplexity:.2f}", help="Measures text predictability. Lower scores are more AI-like. 🧠")
                 with col2:
-                    st.metric(
-                        label="Burstiness", 
-                        value=f"{burstiness:.2f}",
-                        help="Measures word repetition. Lower scores are more AI-like. 🔄"
-                    )
-
+                    st.metric("Burstiness", f"{burstiness:.2f}", help="Measures word repetition. Lower scores are more AI-like. 🔄")
                 with col3:
-                    st.metric(
-                        label="Entropy", 
-                        value=f"{entropy:.2f}",
-                        help="Measures word diversity. Lower scores are more AI-like. 🎲"
-                    )
+                    st.metric("Entropy", f"{entropy:.2f}", help="Measures word diversity. Lower scores are more AI-like. 🎲")
 
                 st.divider()
 
