@@ -59,8 +59,8 @@ st.markdown("""
 st.markdown(
     """
     <div style="text-align:center; padding:10px; border-radius:10px; 
-                 background-color:#1A2234; border:1px solid #333A4A; 
-                 box-shadow: 0 4px 10px rgba(0,0,0,0.4); margin-bottom:20px;">
+                background-color:#1A2234; border:1px solid #333A4A; 
+                box-shadow: 0 4px 10px rgba(0,0,0,0.4); margin-bottom:20px;">
         <h4 style="color:#92b6ff; margin:0;">
             🔬 This project is made for <b>testing purposes</b> by:<br>
             Dhairya Sarswat, Shashwat Shinghal, Harsh Agarwal, Hannaan Akhtar <br>
@@ -71,24 +71,20 @@ st.markdown(
 )
 
 # ------------------------------------
-# NLTK Setup (Robust for Streamlit Cloud)
+# NLTK Setup (Corrected for Streamlit Cloud)
 # ------------------------------------
-# Create a directory for NLTK data if it doesn't exist
-nltk_data_dir = os.path.join(os.path.expanduser("~"), "nltk_data")
-if not os.path.exists(nltk_data_dir):
-    os.makedirs(nltk_data_dir)
+# Download NLTK packages directly. This is the most reliable method
+# for Streamlit Cloud deployments as it ensures the data is available.
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
 
-# Define the packages to download
-nltk_packages = ["punkt", "stopwords"]
-for package in nltk_packages:
-    try:
-        nltk.data.find(f"tokenizers/{package}")
-    except LookupError:
-        nltk.download(package, download_dir=nltk_data_dir, quiet=True)
+try:
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    nltk.download('stopwords', quiet=True)
 
-# Add the custom path to NLTK's data path
-if nltk_data_dir not in nltk.data.path:
-    nltk.data.path.append(nltk_data_dir)
 
 # ------------------------------------
 # Load GPT-2 Model and Tokenizer
